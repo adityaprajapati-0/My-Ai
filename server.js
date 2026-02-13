@@ -15,17 +15,27 @@ app.use(express.json());
 app.post("/api/chat", async (req, res) => {
   const { messages } = req.body;
 
-  if (!messages) {
-    return res.status(400).json({ error: "Messages are required" });
+  if (!messages || !Array.isArray(messages)) {
+    return res.status(400).json({ error: "Messages array is required" });
+  }
+
+  if (!process.env.GROQ_API_KEY) {
+    console.error(
+      "SERVER ERROR: GROQ_API_KEY is missing from environment variables!",
+    );
+    return res
+      .status(500)
+      .json({ error: "Server configuration error (API Key missing)" });
   }
 
   try {
+    console.log(`Sending request to Groq with ${messages.length} messages...`);
     const response = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          Authorization: `Bearer ${process.env.GROQ_API_KEY.trim()}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -37,11 +47,25 @@ app.post("/api/chat", async (req, res) => {
       },
     );
 
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error("Groq API Error Status:", response.status, errorData);
+      return res.status(response.status).json({
+        error: "Groq API returned an error",
+        details: errorData,
+      });
+    }
+
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error("Groq API Error:", error);
-    res.status(500).json({ error: "Failed to fetch from Groq" });
+    console.error("Fetch Error:", error.message);
+    res
+      .status(500)
+      .json({
+        error: "Failed to communicate with Groq API",
+        message: error.message,
+      });
   }
 });
 
